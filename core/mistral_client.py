@@ -2,6 +2,7 @@ import hashlib
 import math
 import os
 import random
+import threading
 import time
 from typing import List
 
@@ -42,7 +43,11 @@ _EMBED_MODEL = os.getenv("MISTRAL_EMBED_MODEL", "mistral-embed")
 _EMBED_DIM = _int_env("MISTRAL_EMBED_DIM", 1024)
 _EMBED_RETRY_LIMIT = _int_env("MISTRAL_EMBED_MAX_RETRIES", 3)
 _EMBED_RETRY_DELAY = _float_env("MISTRAL_EMBED_RETRY_SECONDS", 2.0)
+_EMBED_RPS_LIMIT = _float_env("MISTRAL_EMBED_RPS", 1.0)
 _USE_FAKE_EMBEDDINGS = _bool_env("MOCK_MISTRAL_EMBEDDINGS", False)
+
+_rate_lock = threading.Lock()
+_last_rate_call = 0.0
 
 client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
@@ -63,10 +68,25 @@ def chat(prompt: str) -> str:
     return response.choices[0].message.content.strip()
 
 
+def _respect_rate_limit():
+    if _EMBED_RPS_LIMIT <= 0:
+        return
+    minimum_interval = 1.0 / max(_EMBED_RPS_LIMIT, 1e-6)
+    with _rate_lock:
+        global _last_rate_call
+        now = time.monotonic()
+        wait_seconds = (_last_rate_call + minimum_interval) - now
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+            now = time.monotonic()
+        _last_rate_call = now
+
+
 def _call_embeddings(batch: List[str]):
     last_error: Exception | None = None
     for attempt in range(_EMBED_RETRY_LIMIT + 1):
         try:
+            _respect_rate_limit()
             return client.embeddings.create(model=_EMBED_MODEL, inputs=batch)
         except sdkerror.SDKError as err:
             last_error = err
@@ -90,11 +110,21 @@ def embed_texts(texts: List[str], batch_size: int = 12) -> List[List[float]]:
     if _USE_FAKE_EMBEDDINGS:
         return [_fake_embedding(text) for text in texts]
 
+    chunk_size = max(1, batch_size)
     vectors: List[List[float]] = []
-    for start in range(0, len(texts), batch_size):
-        batch = texts[start : start + batch_size]
-        resp = _call_embeddings(batch)
+    index = 0
+    while index < len(texts):
+        batch = texts[index : index + chunk_size]
+        try:
+            resp = _call_embeddings(batch)
+        except sdkerror.SDKError as err:
+            message = str(err).lower()
+            if "status 429" in message and chunk_size > 1:
+                chunk_size = max(1, chunk_size // 2)
+                continue
+            raise
         vectors.extend([(item.embedding or []) for item in resp.data])
+        index += len(batch)
 
     return vectors
 

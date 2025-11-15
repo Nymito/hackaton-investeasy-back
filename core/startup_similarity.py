@@ -15,6 +15,12 @@ from models import SimilarItem
 
 DATASET_PATH = Path(os.getenv("STARTUP_DATASET_PATH", "unicorns till sep 2022.csv"))
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "startup_pitches")
+VERBOSE = os.getenv("STARTUP_SIMILARITY_VERBOSE", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 def _int_env(var: str, default: int) -> int:
@@ -27,11 +33,17 @@ def _int_env(var: str, default: int) -> int:
 
 VECTOR_DIM = _int_env("QDRANT_VECTOR_DIM", 1024)
 EMBED_BATCH_SIZE = _int_env("EMBED_BATCH_SIZE", 32)
+UPSERT_CHUNK = _int_env("QDRANT_UPSERT_CHUNK", 256)
 
 _client: QdrantClient | None = None
 _client_lock = threading.Lock()
 _ingest_lock = threading.Lock()
 _dataset_synced = False
+
+
+def _log(message: str) -> None:
+    if VERBOSE:
+        print(f"[startup_similarity] {message}")
 
 
 @dataclass
@@ -158,14 +170,19 @@ def _get_client() -> QdrantClient:
         if _client is None:
             url = os.getenv("QDRANT_URL", "http://localhost:6333")
             api_key = os.getenv("QDRANT_API_KEY")
+            _log(f"Creating Qdrant client for {url}")
             _client = QdrantClient(url=url, api_key=api_key)
     return _client
 
 
 def _ensure_collection(client: QdrantClient) -> None:
     if client.collection_exists(COLLECTION_NAME):
+        _log(f"Collection '{COLLECTION_NAME}' already exists")
         return
 
+    _log(
+        f"Creating collection '{COLLECTION_NAME}' (dim={VECTOR_DIM}, distance=cosine)"
+    )
     client.create_collection(
         COLLECTION_NAME,
         vectors_config=qmodels.VectorParams(
@@ -176,6 +193,7 @@ def _ensure_collection(client: QdrantClient) -> None:
 
 def _upsert_records(client: QdrantClient, records: List[StartupRecord]) -> None:
     texts = [record.pitch for record in records]
+    _log(f"Embedding {len(texts)} startup pitches (batch={EMBED_BATCH_SIZE})")
     vectors = embed_texts(texts, batch_size=EMBED_BATCH_SIZE)
     points = [
         qmodels.PointStruct(
@@ -185,7 +203,21 @@ def _upsert_records(client: QdrantClient, records: List[StartupRecord]) -> None:
         )
         for idx, record in enumerate(records)
     ]
-    client.upsert(collection_name=COLLECTION_NAME, wait=True, points=points)
+    chunk_size = max(1, UPSERT_CHUNK)
+    if chunk_size >= len(points):
+        _log(
+            f"Upserting {len(points)} points into collection '{COLLECTION_NAME}' in a single request"
+        )
+        client.upsert(collection_name=COLLECTION_NAME, wait=True, points=points)
+        return
+
+    _log(
+        f"Upserting {len(points)} points into '{COLLECTION_NAME}' in chunks of {chunk_size}"
+    )
+    for start in range(0, len(points), chunk_size):
+        chunk = points[start : start + chunk_size]
+        _log(f"Uploading points {start}-{start + len(chunk) - 1}")
+        client.upsert(collection_name=COLLECTION_NAME, wait=True, points=chunk)
 
 
 def sync_dataset(force: bool = False) -> int:
@@ -193,6 +225,7 @@ def sync_dataset(force: bool = False) -> int:
     Pushes the CSV dataset into Qdrant. Returns the amount of points written.
     """
     records = _dataset_records()
+    _log(f"Loaded {len(records)} dataset records (force={force})")
     if not records:
         return 0
 
@@ -209,16 +242,22 @@ def sync_dataset(force: bool = False) -> int:
         if not force:
             try:
                 count = client.count(collection_name=COLLECTION_NAME).count
+                _log(
+                    f"Collection '{COLLECTION_NAME}' currently stores {count} points"
+                )
                 if count >= len(records):
                     needs_refresh = False
-            except Exception:
+            except Exception as exc:
+                _log(f"Failed to count existing points ({exc}); refreshing")
                 needs_refresh = True
 
         if needs_refresh:
             _upsert_records(client, records)
             written = len(records)
+            _log(f"Wrote {written} points to '{COLLECTION_NAME}'")
         else:
             written = 0
+            _log("Dataset already synced; skipping upload")
 
         _dataset_synced = True
         return written
@@ -247,23 +286,28 @@ def _score_to_similarity(score: float | None) -> float:
 
 def find_similar_startups(idea: str, limit: int = 5) -> List[SimilarItem]:
     records = _dataset_records()
+    _log(f"Searching similar startups for '{idea[:40]}...' (limit={limit})")
     if not records:
         return []
 
     try:
         sync_dataset()
         client = _get_client()
+        _log("Embedding query idea")
         query_vector = embed_text(idea)
         if not query_vector:
             return []
 
+        _log(f"Querying Qdrant collection '{COLLECTION_NAME}'")
         hits = client.search(
             collection_name=COLLECTION_NAME,
             query_vector=query_vector,
             limit=limit,
             with_payload=True,
         )
-    except Exception:
+        _log("Search done; formatting results")
+    except Exception as exc:
+        _log(f"Similarity search failed: {exc}")
         return []
 
     similar: List[SimilarItem] = []

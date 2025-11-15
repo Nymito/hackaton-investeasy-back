@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 class Score(BaseModel):
@@ -17,6 +17,14 @@ class TargetAudience(BaseModel):
     segment: str
     purchasing_power: str
     justification: str
+
+
+class ScoreComponents(BaseModel):
+    market_opportunity: int = Field(ge=0, le=100)
+    technical_feasibility: int = Field(ge=0, le=100)
+    competitive_advantage: int = Field(ge=0, le=100)
+    reason: str = ""
+
 
 class SimilarItem(BaseModel):
     idea: str
@@ -39,6 +47,36 @@ class AnalyzeResponse(BaseModel):
     positioning: str
     similar: List[SimilarItem]
     category: Optional[str] = None
+
+
+class CoreAnalysisResponse(BaseModel):
+    summary: str
+    positioning: str
+    score_components: ScoreComponents
+    profitability: Profitability
+    target: TargetAudience
+    category: Optional[str] = None
+
+
+class CompetitorListResponse(BaseModel):
+    competitors: List[Competitor]
+
+
+class SimilarityResponse(BaseModel):
+    similar: List[SimilarItem]
+
+
+class ScoreComputationRequest(BaseModel):
+    idea: str
+    score_components: ScoreComponents
+    category: Optional[str] = None
+
+
+class ScoreComputationResponse(BaseModel):
+    score: Score
+    category: str
+    weights: Dict[str, float]
+    weight_explanation: str
 
 
 

@@ -1,114 +1,12 @@
-# core/weighting.py
-"""
-Module: weighting
------------------
-Détecte automatiquement le type d'idée startup (AI, SaaS, gaming, etc.)
-et applique une pondération adaptée pour le calcul du score global.
-
-Utilisation :
-    from core.weighting import detect_category, get_dynamic_weights
-
-    idea = "An AI tool for managing invoices automatically"
-    category = detect_category(idea)
-    weights = get_dynamic_weights(idea)
-"""
-
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
-WEIGHT_PROFILES: Dict[str, Dict[str, float]] = {
-    "general":         {"market_opportunity": 0.40, "technical_feasibility": 0.30, "competitive_advantage": 0.30},
-    "ai_infra":        {"market_opportunity": 0.30, "technical_feasibility": 0.45, "competitive_advantage": 0.25},
-    "b2b_saas":        {"market_opportunity": 0.35, "technical_feasibility": 0.30, "competitive_advantage": 0.35},
-    "b2c_app":         {"market_opportunity": 0.45, "technical_feasibility": 0.25, "competitive_advantage": 0.30},
-    "impact_social":   {"market_opportunity": 0.40, "technical_feasibility": 0.20, "competitive_advantage": 0.40},
-    "deeptech":        {"market_opportunity": 0.25, "technical_feasibility": 0.45, "competitive_advantage": 0.30},
-    "creative_media":  {"market_opportunity": 0.45, "technical_feasibility": 0.25, "competitive_advantage": 0.30},
-    "gaming_esports":  {"market_opportunity": 0.45, "technical_feasibility": 0.20, "competitive_advantage": 0.35},
-    "smart_city":      {"market_opportunity": 0.35, "technical_feasibility": 0.40, "competitive_advantage": 0.25},
-    "fintech":         {"market_opportunity": 0.40, "technical_feasibility": 0.30, "competitive_advantage": 0.30},
-    "healthtech":      {"market_opportunity": 0.35, "technical_feasibility": 0.35, "competitive_advantage": 0.30},
-    "edtech":          {"market_opportunity": 0.40, "technical_feasibility": 0.25, "competitive_advantage": 0.35},
-    "travel_lifestyle":{"market_opportunity": 0.45, "technical_feasibility": 0.25, "competitive_advantage": 0.30},
-    "legal_regtech":   {"market_opportunity": 0.35, "technical_feasibility": 0.40, "competitive_advantage": 0.25},
-}
+from core.category_data import (
+    CATEGORY_KEYWORDS,
+    CATEGORY_PRIORITY,
+    WEIGHT_PROFILES,
+)
 
-CATEGORY_KEYWORDS: Dict[str, List[Tuple[str, float]]] = {
-    "ai_infra": [
-        ("ai", 0.7), ("ml", 0.7), ("llm", 1.0), ("model", 0.7), ("agent", 0.8),
-        ("inference", 1.0), ("dataset", 0.8), ("pipeline", 0.8),
-        ("framework", 0.7), ("api", 0.6), ("automation", 0.8),
-    ],
-    "b2b_saas": [
-        ("b2b", 1.0), ("saas", 1.0), ("crm", 1.0), ("automation", 0.8),
-        ("workflow", 0.7), ("dashboard", 0.7), ("analytics", 0.7),
-        ("productivity", 0.6), ("backoffice", 0.7), ("integration", 0.6),
-    ],
-    "b2c_app": [
-        ("app", 1.0), ("mobile", 1.0), ("social", 0.8), ("users", 0.7),
-        ("chat", 0.8), ("community", 0.7), ("dating", 1.0),
-        ("gamify", 0.7), ("platform", 0.6), ("marketplace", 0.7),
-    ],
-    "impact_social": [
-        ("green", 1.0), ("climate", 0.8), ("eco", 1.0), ("sustainable", 1.0),
-        ("impact", 0.8), ("ngo", 0.8), ("carbon", 0.9), ("education", 0.8),
-        ("healthcare", 0.7), ("recycling", 1.0), ("planet", 0.8),
-    ],
-    "deeptech": [
-        ("robotics", 1.0), ("biotech", 1.0), ("chemistry", 0.9),
-        ("hardware", 0.8), ("research", 0.8), ("drone", 0.9),
-        ("vision", 0.8), ("sensor", 0.8), ("physics", 0.8),
-        ("quantum", 1.0), ("lab", 0.8),
-    ],
-    "creative_media": [
-        ("art", 0.8), ("music", 0.8), ("video", 0.8), ("film", 0.8),
-        ("creator", 1.0), ("media", 0.8), ("content", 0.8),
-        ("design", 0.8), ("writing", 0.7), ("animation", 0.8), ("podcast", 0.7),
-    ],
-    "gaming_esports": [
-        ("esport", 1.5), ("esports", 1.5), ("gaming", 1.2), ("twitch", 1.2),
-        ("youtube", 1.0), ("stream", 1.2), ("streamer", 1.2), ("team", 0.8),
-        ("tournament", 1.0), ("fans", 0.8), ("community", 0.7),
-        ("league", 0.8), ("discord", 1.0), ("influencer", 0.9), ("sponsorship", 1.0),
-    ],
-    "smart_city": [
-        ("smart city", 1.0), ("mobility", 0.9), ("transport", 0.8), ("traffic", 0.8),
-        ("iot", 1.0), ("energy", 0.8), ("urban", 0.8), ("sensors", 0.7),
-        ("parking", 0.7), ("fleet", 0.7), ("logistics", 0.8),
-    ],
-    "fintech": [
-        ("finance", 1.0), ("fintech", 1.0), ("payment", 1.0), ("bank", 0.9),
-        ("crypto", 1.0), ("wallet", 0.8), ("accounting", 0.9),
-        ("tax", 0.8), ("invoice", 0.8), ("insure", 0.8), ("trading", 0.8),
-    ],
-    "healthtech": [
-        ("health", 1.0), ("medical", 1.0), ("patient", 0.8), ("care", 0.8),
-        ("doctor", 0.8), ("hospital", 0.8), ("fitness", 0.8),
-        ("wellness", 0.8), ("diagnosis", 0.8), ("therapy", 0.8),
-    ],
-    "edtech": [
-        ("learning", 1.0), ("tutor", 1.0), ("course", 0.9), ("student", 0.9),
-        ("training", 1.0), ("education", 1.0), ("class", 0.8),
-        ("skill", 0.8), ("lesson", 0.8), ("school", 0.8), ("teacher", 0.8),
-    ],
-    "travel_lifestyle": [
-        ("travel", 1.0), ("trip", 0.9), ("booking", 0.9), ("food", 0.8),
-        ("restaurant", 0.8), ("event", 0.8), ("ticket", 0.7),
-        ("guide", 0.8), ("itinerary", 0.8), ("hotel", 0.8), ("discovery", 0.8),
-    ],
-    "legal_regtech": [
-        ("legal", 1.0), ("contract", 1.0), ("compliance", 1.0), ("gdpr", 1.0),
-        ("regulation", 0.8), ("policy", 0.8), ("privacy", 0.9),
-        ("security", 0.9), ("law", 1.0), ("lawyer", 0.9), ("court", 0.9),
-    ],
-}
-
-CATEGORY_PRIORITY = [
-    "ai_infra", "deeptech", "gaming_esports", "fintech",
-    "healthtech", "smart_city", "impact_social", "b2b_saas",
-    "edtech", "creative_media", "travel_lifestyle", "b2c_app",
-    "legal_regtech", "general"
-]
 
 def _score_for_category(text: str, pairs: List[Tuple[str, float]]) -> float:
     score = 0.0
@@ -118,11 +16,30 @@ def _score_for_category(text: str, pairs: List[Tuple[str, float]]) -> float:
     return score
 
 
+def _vector_category_lookup(idea: str) -> Optional[str]:
+    if not idea:
+        return None
+    try:
+        from core.category_profiles import detect_category_vector
+    except Exception:
+        return None
+
+    try:
+        return detect_category_vector(idea)
+    except Exception:
+        return None
+
+
 def detect_category(idea: str) -> str:
     """
-    Détecte la catégorie la plus probable d'une idée
-    en comptant les correspondances de mots-clés pondérées.
+    Détecte la catégorie via similarité vectorielle (si dispo),
+    sinon retombe sur les mots-clés historiques.
     """
+
+    category = _vector_category_lookup(idea)
+    if category:
+        return category
+
     text = idea.lower()
     scores = []
     for cat, pairs in CATEGORY_KEYWORDS.items():
@@ -145,4 +62,10 @@ def get_dynamic_weights(idea: str) -> Dict[str, float]:
     Retourne le profil de pondération adapté à une idée donnée.
     """
     category = detect_category(idea)
+    return WEIGHT_PROFILES.get(category, WEIGHT_PROFILES["general"])
+
+
+def get_weights_for_category(category: str | None) -> Dict[str, float]:
+    if not category:
+        return WEIGHT_PROFILES["general"]
     return WEIGHT_PROFILES.get(category, WEIGHT_PROFILES["general"])

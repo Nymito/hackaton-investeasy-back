@@ -1,12 +1,20 @@
-import json
 import re
 
-from core.scoring import compute_score
-from core.utils import is_valid_url, safe_json_loads
-from models import AnalyzeResponse, Competitor, Profitability, Score, SimilarItem, TargetAudience
+from core.scoring import compute_score, explain_score
+from core.utils import safe_json_loads
+from models import (
+    AnalyzeResponse,
+    Competitor,
+    CoreAnalysisResponse,
+    Profitability,
+    Score,
+    ScoreComponents,
+    SimilarItem,
+    TargetAudience,
+)
 from core.mistral_client import chat
-from core.weighting import detect_category, get_dynamic_weights
 from core.startup_similarity import find_similar_startups
+from core.weighting import detect_category, get_dynamic_weights, get_weights_for_category
 
 
 def _extract_int(value, default):
@@ -24,6 +32,10 @@ def _extract_int(value, default):
             except ValueError:
                 return default
     return default
+
+
+def _score_value(raw: object, default: int = 50) -> int:
+    return max(0, min(100, _extract_int(raw, default)))
 
 
 
@@ -85,61 +97,115 @@ def analyze_idea_mock(idea: str) -> AnalyzeResponse:
         category="test_cat"
     )
 
-def analyze_idea(idea: str) -> AnalyzeResponse:
-    """
-    Analyse une idée de startup :
-    - Détecte automatiquement la catégorie
-    - Appelle Mistral pour obtenir résumé, positionnement, concurrents et sous-scores
-    - Calcule le score global pondéré dynamiquement selon la catégorie
-    """
 
-    # 🔍 Étape 1 : détecter la catégorie
-    category = detect_category(idea)
-    weights = get_dynamic_weights(idea)
-
-    # Analyse principale
-    core = analyze_core(idea)
-    competitors = analyze_competitors(idea)
-
-    subscores = core["score"]
-    score_value = compute_score(subscores, weights)
-    score = Score(value=score_value, reason=subscores.get("reason", ""))
-
+def _build_profitability(core: dict) -> Profitability:
     profitability_data = core.get("profitability", {})
-    profitability = Profitability(
-        roi_percentage=max(0, min(300, _extract_int(profitability_data.get("roi_percentage"), 0))),
-        timeframe_months=max(1, min(60, _extract_int(profitability_data.get("timeframe_months"), 12))),
-        reason=str(profitability_data.get("reason") or "")
+    return Profitability(
+        roi_percentage=max(
+            0, min(300, _extract_int(profitability_data.get("roi_percentage"), 0))
+        ),
+        timeframe_months=max(
+            1,
+            min(60, _extract_int(profitability_data.get("timeframe_months"), 12)),
+        ),
+        reason=str(profitability_data.get("reason") or ""),
     )
 
+
+def _build_target(core: dict) -> TargetAudience:
     target_data = core.get("target", {})
-    target = TargetAudience(
+    return TargetAudience(
         segment=str(target_data.get("segment") or ""),
         purchasing_power=str(target_data.get("purchasing_power") or ""),
-        justification=str(target_data.get("justification") or "")
+        justification=str(target_data.get("justification") or ""),
     )
 
-    competitors_objs = [
-        Competitor(
-            name=c.get("name", ""),
-            strength=c.get("strength", ""),
-            weakness=c.get("weakness", ""),
-            landing_page=c.get("landing_page"),
-            logo_url=f"https://www.google.com/s2/favicons?sz=64&domain_url={c.get('landing_page')}" if c.get("landing_page") else None
-        )
-        for c in competitors
-    ]
-    similar_items = find_similar_startups(idea)
 
-    return AnalyzeResponse(
+def _build_score_components(core: dict) -> ScoreComponents:
+    score_data = core.get("score", {})
+    return ScoreComponents(
+        market_opportunity=_score_value(score_data.get("market_opportunity"), 50),
+        technical_feasibility=_score_value(score_data.get("technical_feasibility"), 50),
+        competitive_advantage=_score_value(
+            score_data.get("competitive_advantage"), 50
+        ),
+        reason=str(score_data.get("reason") or ""),
+    )
+
+
+def core_analysis_response(idea: str) -> CoreAnalysisResponse:
+    category = detect_category(idea)
+    core = analyze_core(idea)
+    score_components = _build_score_components(core)
+    profitability = _build_profitability(core)
+    target = _build_target(core)
+    return CoreAnalysisResponse(
         summary=core["summary"],
         positioning=core["positioning"],
-        score=score,
+        score_components=score_components,
         profitability=profitability,
         target=target,
+        category=category,
+    )
+
+
+def _competitor_model(data: dict) -> Competitor:
+    return Competitor(
+        name=str(data.get("name") or ""),
+        strength=str(data.get("strength") or ""),
+        weakness=str(data.get("weakness") or ""),
+        landing_page=data.get("landing_page"),
+        logo_url=data.get("logo_url"),
+    )
+
+
+def competitor_models(idea: str) -> list[Competitor]:
+    competitors = analyze_competitors(idea)
+    return [_competitor_model(c) for c in competitors]
+
+
+def compute_weighted_score_from_components(
+    idea: str, score_components: ScoreComponents, category: str | None = None
+) -> tuple[Score, str, dict[str, float], str]:
+    if category:
+        final_category = category
+        weights = get_weights_for_category(category)
+    else:
+        final_category = detect_category(idea)
+        weights = get_dynamic_weights(idea)
+
+    base_scores = {
+        "market_opportunity": score_components.market_opportunity,
+        "technical_feasibility": score_components.technical_feasibility,
+        "competitive_advantage": score_components.competitive_advantage,
+    }
+    score_value = compute_score(base_scores, weights)
+    explanation = explain_score(weights)
+    score = Score(value=score_value, reason=score_components.reason)
+    return score, final_category, weights, explanation
+
+def analyze_idea(idea: str) -> AnalyzeResponse:
+    """
+    Orchestrateur historique qui conserve un endpoint unique.
+    Réutilise les briques exposées individuellement pour générer la réponse complète.
+    """
+
+    core_result = core_analysis_response(idea)
+    competitors_objs = competitor_models(idea)
+    similar_items = find_similar_startups(idea)
+    score, final_category, _, _ = compute_weighted_score_from_components(
+        idea, core_result.score_components, category=core_result.category
+    )
+
+    return AnalyzeResponse(
+        summary=core_result.summary,
+        positioning=core_result.positioning,
+        score=score,
+        profitability=core_result.profitability,
+        target=core_result.target,
         competitors=competitors_objs,
         similar=similar_items,
-        category=category,
+        category=final_category,
     )
 
 def analyze_core(idea: str) -> dict:
@@ -210,7 +276,6 @@ def analyze_competitors(idea: str) -> list[dict]:
     """
     raw = chat(prompt)
     data = safe_json_loads(raw)
-    print(data)
 
 
     # 🧩 Si Mistral a renvoyé une simple liste de noms -> on reconstruit un minimum de structure
