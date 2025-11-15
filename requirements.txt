@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+mistralai
+qdrant-client
+python-dotenv
+requests
+reportlab

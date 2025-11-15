@@ -1,0 +1,271 @@
+{
+  "name": "My workflow 2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "eae2a0c7-3984-4a38-9244-5023a09b355a",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -608,
+        96
+      ],
+      "id": "397f7dc1-b493-4d4b-a7e3-359d18d10fdc",
+      "name": "Webhook",
+      "webhookId": "eae2a0c7-3984-4a38-9244-5023a09b355a"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 11
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -416,
+        -176
+      ],
+      "id": "3fd8366e-fe54-45ec-af2a-e121e8343030",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "=https://news.google.com/rss/search?q=<{{ $json.competitors[0].name }}+OR+{{ $json.competitors[1].name }}OR+{{ $json.competitors[12].name }}>&hl=en ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -192,
+        0
+      ],
+      "id": "42cddb7d-5f20-4354-8b6b-0ed630f2786f",
+      "name": "RSS Read"
+    },
+    {
+      "parameters": {
+        "fromEmail": "gianni.jouve@gmail.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "[Market Spy Agent] - Most recent news about your competitors",
+        "html": "={{$items().map((item, idx) => `${idx+1}. ${item.json.title} (${item.json.link})`).join('\\n')}}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        416,
+        192
+      ],
+      "id": "4c984438-a85b-48c7-9368-d7081f905a14",
+      "name": "Send email",
+      "webhookId": "99efcab2-88c7-465e-a26b-3d03c993635a",
+      "credentials": {
+        "smtp": {
+          "id": "9ZS7gEO3zgd1Htoo",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        16,
+        32
+      ],
+      "id": "d0c0230c-daeb-4610-9479-ca4d77e9b8e6",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c9cd2fbf-7a77-43cb-9f3a-ca0458873409",
+              "name": "email",
+              "value": "={{ $json.body.email }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -192,
+        304
+      ],
+      "id": "3b75d4e3-7115-4f5c-889d-76905e944fe6",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "mode": "combineBySql",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        224,
+        192
+      ],
+      "id": "ec180534-77b3-4c6f-90da-88ac486ec8e9",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "idea": "Plateforme IA pour optimiser la logistique des dark kitchens.",
+          "email": "gianni.jouve@gmail.com",
+          "analysis": {
+            "summary": "L'IA anticipe les pics de commandes et répartit la production entre plusieurs cuisines fantômes.",
+            "positioning": "Focus multi-sites, pricing à la performance sur les économies logistiques.",
+            "score": {
+              "value": 78,
+              "reason": "Croissance du marché + douleur forte chez les chaînes de dark kitchens."
+            },
+            "profitability": {
+              "roi_percentage": 140,
+              "timeframe_months": 18,
+              "reason": "Modèle SaaS + fees de performance, CAPEX faible."
+            },
+            "target": {
+              "segment": "Réseaux de dark kitchens (5–50 sites)",
+              "purchasing_power": "élevé",
+              "justification": "Budget outils >100k€/an"
+            },
+            "competitors": [
+              {
+                "name": "KitchenFuel",
+                "landing_page": "https://kitchenfuel.io",
+                "logo_url": "https://www.google.com/s2/favicons?sz=64&domain_url=https://kitchenfuel.io",
+                "strength": "Partenariats avec Deliveroo",
+                "weakness": "Pas de coordination multi-sites"
+              },
+              {
+                "name": "GhostLabs",
+                "landing_page": "https://ghostlabs.ai",
+                "logo_url": "https://www.google.com/s2/favicons?sz=64&domain_url=https://ghostlabs.ai",
+                "strength": "Module de prévision météo",
+                "weakness": "Implémentation on-prem coûteuse"
+              }
+            ],
+            "similar": [
+              {
+                "idea": "CloudKitchenOS • USA • unicorn • $5.2B",
+                "similarity": 0.71
+              },
+              {
+                "idea": "DeliverX Ops • Europe • unicorn • $1.8B",
+                "similarity": 0.65
+              }
+            ],
+            "category": "smart_city"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email": {
+      "main": [
+        []
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ddc29aa4-51f8-4fe6-a3e4-f7b567d5e53c",
+  "meta": {
+    "instanceId": "4598592ba413849b3a16c3f9160d10a0f540b73fe2bafaba48c77b2a06cc6505"
+  },
+  "id": "tofiGS1wH5qOjb1v",
+  "tags": []
+}
