@@ -38,7 +38,7 @@
     },
     {
       "parameters": {
-        "url": "=https://news.google.com/rss/search?q=<{{ $json.competitors[0].name }}+OR+{{ $json.competitors[1].name }}OR+{{ $json.competitors[12].name }}>&hl=en ",
+        "url": "=https://news.google.com/rss/search?q=<{{ $json.body.competitors[0].name }}+OR+{{ $json.body.competitors[1].name }}OR+{{ $json.body.competitors[12].name }}>&hl=en ",
         "options": {}
       },
       "type": "n8n-nodes-base.rssFeedRead",
@@ -53,15 +53,15 @@
     {
       "parameters": {
         "fromEmail": "gianni.jouve@gmail.com",
-        "toEmail": "={{ $json.email }}",
+        "toEmail": "={{ $json.articles[1].email }}",
         "subject": "[Market Spy Agent] - Most recent news about your competitors",
-        "html": "={{$items().map((item, idx) => `${idx+1}. ${item.json.title} (${item.json.link})`).join('\\n')}}\n",
+        "html": "=<div style=\"font-family: 'Inter', Arial, sans-serif; color:#1f2933; line-height:1.5;\">\n  <p style=\"margin:0 0 16px;\">Hello {{ $json.firstName || 'Team' }},</p>\n\n  <p style=\"margin:0 0 16px;\">Here’s today’s curated list of articles. Each entry includes the source, date, and a direct link.</p>\n\n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\">\n    <tbody>\n      {{ $json.articles.map((article, idx) => `\n      <tr style=\"background:${idx % 2 ? '#fafafa' : '#ffffff'};\">\n        <td style=\"padding:12px 16px;\">\n          <div style=\"font-size:16px; font-weight:600;\">\n            ${idx + 1}. ${article.title}\n          </div>\n          <div style=\"font-size:13px; color:#6b7280; margin:4px 0;\">\n            ${article.source || 'Unknown source'}${article.isoDate ? ' • ' + new Date(article.isoDate).toLocaleDateString('en-US') : ''}\n          </div>\n          <div style=\"font-size:14px; margin:6px 0;\">\n            ${article.contentSnippet || 'Summary unavailable.'}\n          </div>\n          <a href=\"${article.link}\" target=\"_blank\" style=\"font-size:14px; color:#2563eb;\">Read the article →</a>\n        </td>\n      </tr>\n      `).join('') }}\n    </tbody>\n  </table>\n\n  <p style=\"margin:24px 0 0; font-size:14px;\">\n    Need a synthesis or a sector analysis? Just reply to this email and I’ll handle it.\n  </p>\n\n  <p style=\"margin:8px 0 0; font-size:14px; color:#9ca3af;\">\n    — AI Market Analyst\n  </p>\n</div>\n",
         "options": {}
       },
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        416,
+        560,
         192
       ],
       "id": "4c984438-a85b-48c7-9368-d7081f905a14",
@@ -123,6 +123,19 @@
       ],
       "id": "ec180534-77b3-4c6f-90da-88ac486ec8e9",
       "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    articles: items.map(item => item.json)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        192
+      ],
+      "id": "42a37400-c315-4052-956a-6484b2e15980",
+      "name": "Code in JavaScript"
     }
   ],
   "pinData": {
@@ -250,6 +263,17 @@
       "main": [
         [
           {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
             "node": "Send email",
             "type": "main",
             "index": 0
@@ -262,7 +286,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "ddc29aa4-51f8-4fe6-a3e4-f7b567d5e53c",
+  "versionId": "b8a938c8-e08d-4f43-93d8-57c43fc97326",
   "meta": {
     "instanceId": "4598592ba413849b3a16c3f9160d10a0f540b73fe2bafaba48c77b2a06cc6505"
   },
